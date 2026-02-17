@@ -12,25 +12,58 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+CSV_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_De_Vivienda_Asignados_20260217.csv"
+CSV_DATE = "20260217"
+API_BASE_URL = "https://www.datos.gov.co/resource/h2yr-zfb2.json"
+API_METADATA_URL = "https://www.datos.gov.co/api/views/h2yr-zfb2.json"
+
 @st.cache_data(ttl=3600)
-def fetch_all_data():
+def get_api_last_update():
+    """
+    Get the last update date from the API metadata.
+    Returns date in YYYYMMDD format or None if error.
+    """
+    try:
+        response = requests.get(API_METADATA_URL, timeout=10)
+        response.raise_for_status()
+        metadata = response.json()
+        
+        if 'rowsUpdatedAt' in metadata:
+            timestamp = metadata['rowsUpdatedAt']
+            date_obj = datetime.fromtimestamp(timestamp)
+            return date_obj.strftime("%Y%m%d")
+        elif 'dataUpdatedAt' in metadata:
+            timestamp = metadata['dataUpdatedAt']
+            date_obj = datetime.fromtimestamp(timestamp)
+            return date_obj.strftime("%Y%m%d")
+    except Exception as e:
+        st.warning(f"No se pudo verificar la fecha de actualización de la API: {str(e)}")
+    
+    return None
+
+@st.cache_data(ttl=3600)
+def fetch_data_from_api():
     """
     Fetch all data from the API with pagination handling.
     The API has a default limit of 1000 rows, so we fetch in batches of 900.
     """
-    base_url = "https://www.datos.gov.co/resource/h2yr-zfb2.json"
     all_data = []
     offset = 0
     limit = 900
     
-    with st.spinner('Cargando datos del Ministerio de Vivienda...'):
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    try:
+        status_text.text('Cargando datos desde la API del Ministerio de Vivienda...')
+        
         while True:
             try:
                 params = {
                     "$limit": limit,
                     "$offset": offset
                 }
-                response = requests.get(base_url, params=params, timeout=30)
+                response = requests.get(API_BASE_URL, params=params, timeout=30)
                 response.raise_for_status()
                 data = response.json()
                 
@@ -40,26 +73,70 @@ def fetch_all_data():
                 all_data.extend(data)
                 offset += limit
                 
+                status_text.text(f'Cargados {len(all_data):,} registros...')
+                
                 if len(data) < limit:
                     break
                     
             except requests.exceptions.RequestException as e:
-                st.error(f"Error al cargar datos: {str(e)}")
+                st.error(f"Error al cargar datos de la API: {str(e)}")
                 break
+        
+        progress_bar.progress(100)
+        status_text.text(f'✅ Carga completa: {len(all_data):,} registros desde la API')
+        
+    finally:
+        progress_bar.empty()
+        status_text.empty()
     
     if all_data:
         df = pd.DataFrame(all_data)
-        
-        if 'hogares' in df.columns:
-            df['hogares'] = pd.to_numeric(df['hogares'], errors='coerce')
-        if 'valor_asignado' in df.columns:
-            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'], errors='coerce')
-        if 'a_o_de_asignaci_n' in df.columns:
-            df['a_o_de_asignaci_n'] = pd.to_numeric(df['a_o_de_asignaci_n'], errors='coerce')
-        
-        return df
+        return process_dataframe(df)
     
     return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def load_csv_data():
+    """
+    Load data from the CSV file hosted on GitHub.
+    """
+    try:
+        df = pd.read_csv(CSV_URL)
+        return process_dataframe(df)
+    except Exception as e:
+        st.error(f"Error al cargar el archivo CSV: {str(e)}")
+        return pd.DataFrame()
+
+def process_dataframe(df):
+    """
+    Process and clean the dataframe.
+    """
+    if 'hogares' in df.columns:
+        df['hogares'] = pd.to_numeric(df['hogares'], errors='coerce')
+    if 'valor_asignado' in df.columns:
+        df['valor_asignado'] = pd.to_numeric(df['valor_asignado'], errors='coerce')
+    if 'a_o_de_asignaci_n' in df.columns:
+        df['a_o_de_asignaci_n'] = pd.to_numeric(df['a_o_de_asignaci_n'], errors='coerce')
+    
+    return df
+
+def load_data(force_api=False):
+    """
+    Main data loading function.
+    Loads from CSV by default, checks API date, and loads from API if newer data is available.
+    """
+    if force_api:
+        return fetch_data_from_api(), "API", datetime.now().strftime("%Y%m%d")
+    
+    api_date = get_api_last_update()
+    
+    if api_date and api_date > CSV_DATE:
+        st.info(f"📡 Datos más recientes disponibles en la API (Fecha API: {api_date} vs CSV: {CSV_DATE}). Cargando desde la API...")
+        return fetch_data_from_api(), "API", api_date
+    else:
+        if api_date:
+            st.success(f"✅ El archivo CSV está actualizado (Fecha: {CSV_DATE}). Cargando datos locales...")
+        return load_csv_data(), "CSV", CSV_DATE
 
 def format_currency(value):
     """Format value as Colombian Pesos"""
@@ -106,13 +183,33 @@ st.markdown("""
 st.markdown('<div class="main-header">🏠 Subsidios de Vivienda Nacional</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Camacol - Análisis de Subsidios Asignados en Colombia</div>', unsafe_allow_html=True)
 
-df = fetch_all_data()
+if 'force_refresh' not in st.session_state:
+    st.session_state.force_refresh = False
+
+df, data_source, data_date = load_data(force_api=st.session_state.force_refresh)
+
+if st.session_state.force_refresh:
+    st.session_state.force_refresh = False
+    st.rerun()
 
 if df.empty:
     st.error("No se pudieron cargar los datos. Por favor, intente nuevamente.")
     st.stop()
 
-st.success(f"✅ Datos cargados exitosamente: {len(df):,} registros")
+col_info1, col_info2, col_info3 = st.columns([2, 2, 1])
+
+with col_info1:
+    st.info(f"📊 **Registros cargados:** {len(df):,}")
+
+with col_info2:
+    formatted_date = f"{data_date[6:8]}/{data_date[4:6]}/{data_date[0:4]}"
+    st.info(f"📅 **Fuente:** {data_source} | **Fecha:** {formatted_date}")
+
+with col_info3:
+    if st.button("🔄 Actualizar desde API", help="Forzar actualización desde la API"):
+        st.session_state.force_refresh = True
+        st.cache_data.clear()
+        st.rerun()
 
 st.sidebar.header("🔍 Filtros")
 
@@ -336,4 +433,3 @@ st.markdown("""
         <p>Última actualización: {}</p>
     </div>
 """.format(datetime.now().strftime("%d/%m/%Y %H:%M")), unsafe_allow_html=True)
-
