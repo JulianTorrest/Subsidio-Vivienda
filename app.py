@@ -4,6 +4,9 @@ import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import numpy as np
 
 st.set_page_config(
     page_title="Subsidios de Vivienda Nacional - Camacol",
@@ -280,16 +283,32 @@ def load_data(force_api=False):
         return load_csv_data(), "CSV", CSV_DATE
 
 def format_currency(value):
-    """Format value as Colombian Pesos"""
-    if pd.isna(value):
+    """Format value as Colombian Pesos with proper handling for large numbers"""
+    if pd.isna(value) or value == 0:
         return "N/A"
-    return f"${value:,.0f}"
+    
+    if value >= 1_000_000_000_000:  # Trillones
+        return f"${value/1_000_000_000_000:.2f}T"
+    elif value >= 1_000_000_000:  # Miles de millones
+        return f"${value/1_000_000_000:.2f}B"
+    elif value >= 1_000_000:  # Millones
+        return f"${value/1_000_000:.2f}M"
+    else:
+        return f"${value:,.0f}"
 
 def format_number(value):
     """Format number with thousands separator"""
-    if pd.isna(value):
+    if pd.isna(value) or value == 0:
         return "N/A"
-    return f"{value:,.0f}"
+    
+    if value >= 1_000_000_000:
+        return f"{value/1_000_000_000:.2f}B"
+    elif value >= 1_000_000:
+        return f"{value/1_000_000:.2f}M"
+    elif value >= 1_000:
+        return f"{value/1_000:.1f}K"
+    else:
+        return f"{value:,.0f}"
 
 st.markdown("""
     <style>
@@ -588,7 +607,7 @@ else:
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Por Departamento", "📅 Por Año", "🏘️ Por Programa", "� Analítica Avanzada", "� Datos Detallados"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📈 Por Departamento", "📅 Por Año", "🏘️ Por Programa", "📊 Analítica Avanzada", "🤖 Machine Learning", "📋 Datos Detallados"])
 
 with tab1:
     st.subheader("Subsidios por Departamento")
@@ -627,6 +646,7 @@ with tab1:
                 color=beneficiary_col,
                 color_continuous_scale='Blues'
             )
+            fig_dept_beneficiaries.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
             fig_dept_beneficiaries.update_layout(height=600)
             st.plotly_chart(fig_dept_beneficiaries, use_container_width=True)
         
@@ -671,6 +691,7 @@ with tab1:
                     color='valor_asignado',
                     color_continuous_scale='Greens'
                 )
+                fig_dept_valor.update_traces(texttemplate='$%{x:,.0f}', textposition='outside')
                 fig_dept_valor.update_layout(height=600)
                 st.plotly_chart(fig_dept_valor, use_container_width=True)
 
@@ -712,7 +733,7 @@ with tab2:
                 labels={year_col: 'Año', beneficiary_col: beneficiary_label},
                 markers=True
             )
-            fig_year_beneficiaries.update_traces(line_color='#1f4788', line_width=3)
+            fig_year_beneficiaries.update_traces(line_color='#1f4788', line_width=3, texttemplate='%{y:,.0f}', textposition='top center')
             st.plotly_chart(fig_year_beneficiaries, use_container_width=True)
         
         with col2:
@@ -780,6 +801,7 @@ with tab3:
                 color=housing_summary.values,
                 color_continuous_scale='Viridis'
             )
+            fig_housing_bar.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
             st.plotly_chart(fig_housing_bar, use_container_width=True)
     elif dataset_type == 'used_housing':
         st.info("📊 El dataset Vivienda Usada no contiene información por programa. Mostrando análisis por fuerza militar.")
@@ -823,6 +845,7 @@ with tab3:
                 color=list(force_data.values()),
                 color_continuous_scale='Viridis'
             )
+            fig_force_bar.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
             st.plotly_chart(fig_force_bar, use_container_width=True)
     elif 'programa' in df_filtered.columns:
         if dataset_type in ['rural', 'cmc_mcy']:
@@ -859,6 +882,7 @@ with tab3:
                 color='valor_asignado',
                 color_continuous_scale='Viridis'
             )
+            fig_prog_bar.update_traces(texttemplate='$%{y:,.0f}', textposition='outside')
             fig_prog_bar.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_prog_bar, use_container_width=True)
 
@@ -898,6 +922,7 @@ with tab4:
                 color=top_5_dept.values,
                 color_continuous_scale='Reds'
             )
+            fig_concentration.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
             st.plotly_chart(fig_concentration, use_container_width=True)
     
     with col2:
@@ -919,8 +944,42 @@ with tab4:
                         color_discrete_sequence=['#1f4788', '#28a745']
                     )
                     st.plotly_chart(fig_vis_comparison, use_container_width=True)
+        elif dataset_type == 'used_housing':
+            st.markdown("### � Distribución por Fuerza Militar")
+            force_cols = {
+                'vis_policia_nacional': 'Policía Nacional (VIS)',
+                'vis_ejercito_nacional': 'Ejército Nacional (VIS)',
+                'vis_fuerza_aerea_colombiana': 'Fuerza Aérea (VIS)',
+                'vis_armada_nacional': 'Armada Nacional (VIS)',
+                'vis_otros': 'Otros (VIS)',
+                'no_vis_policia_nacional': 'Policía Nacional (No VIS)',
+                'no_vis_ejercito_nacional': 'Ejército Nacional (No VIS)',
+                'no_vis_fuerza_aerea_colombiana': 'Fuerza Aérea (No VIS)',
+                'no_vis_armada_nacional': 'Armada Nacional (No VIS)',
+                'no_vis_otros': 'Otros (No VIS)'
+            }
+            
+            force_totals = {}
+            for col, label in force_cols.items():
+                if col in df_filtered.columns:
+                    total = df_filtered[col].sum()
+                    if total > 0:
+                        force_totals[label] = total
+            
+            if force_totals:
+                fig_forces = px.bar(
+                    x=list(force_totals.values()),
+                    y=list(force_totals.keys()),
+                    orientation='h',
+                    title='Distribución de Subsidios por Fuerza Militar',
+                    labels={'x': 'Total Subsidios', 'y': 'Fuerza'},
+                    color=list(force_totals.values()),
+                    color_continuous_scale='Blues'
+                )
+                fig_forces.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
+                st.plotly_chart(fig_forces, use_container_width=True)
         else:
-            st.markdown("### 💰 Valor Promedio por Beneficiario")
+            st.markdown("### �� Valor Promedio por Beneficiario")
             if beneficiary_col in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
                 total_valor = df_filtered['valor_asignado'].sum()
                 total_beneficiaries = df_filtered[beneficiary_col].sum()
@@ -942,6 +1001,7 @@ with tab4:
                         color=dept_avg.values,
                         color_continuous_scale='Greens'
                     )
+                    fig_avg.update_traces(texttemplate='$%{x:,.0f}', textposition='outside')
                     st.plotly_chart(fig_avg, use_container_width=True)
     
     st.markdown("---")
@@ -1028,6 +1088,7 @@ with tab4:
                 color='total_subsidios',
                 color_continuous_scale='Blues'
             )
+            fig_trimestre.update_traces(texttemplate='%{y:,.0f}', textposition='outside')
             st.plotly_chart(fig_trimestre, use_container_width=True)
     else:
         st.markdown("### ��️ Mapa de Calor: Municipios")
@@ -1049,6 +1110,132 @@ with tab4:
             st.plotly_chart(fig_heatmap, use_container_width=True)
 
 with tab5:
+    st.subheader("🤖 Análisis de Machine Learning - Clustering")
+    
+    st.markdown("""
+    ### Agrupación Inteligente de Departamentos
+    Utilizando algoritmos de Machine Learning (K-Means), agrupamos los departamentos según patrones similares 
+    en la asignación de subsidios, identificando grupos con características comunes.
+    """)
+    
+    if 'departamento' in df_filtered.columns:
+        # Preparar datos para clustering según el tipo de dataset
+        if dataset_type == 'general':
+            if 'hogares' in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
+                cluster_data = df_filtered.groupby('departamento').agg({
+                    'hogares': 'sum',
+                    'valor_asignado': 'sum'
+                }).reset_index()
+                cluster_data['avg_value'] = cluster_data['valor_asignado'] / cluster_data['hogares']
+                feature_cols = ['hogares', 'valor_asignado', 'avg_value']
+        elif dataset_type in ['rural', 'cmc_mcy']:
+            if 'no_sfv_asignados' in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
+                cluster_data = df_filtered.groupby('departamento').agg({
+                    'no_sfv_asignados': 'sum',
+                    'valor_asignado': 'sum'
+                }).reset_index()
+                cluster_data['avg_value'] = cluster_data['valor_asignado'] / cluster_data['no_sfv_asignados']
+                feature_cols = ['no_sfv_asignados', 'valor_asignado', 'avg_value']
+        elif dataset_type == 'military':
+            if all(col in df_filtered.columns for col in ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']):
+                cluster_data = df_filtered.groupby('departamento').agg({
+                    'nueva_vis': 'sum',
+                    'nueva_no_vis': 'sum',
+                    'usada_vis': 'sum',
+                    'usada_no_vis': 'sum',
+                    'total_subsidios': 'sum'
+                }).reset_index()
+                feature_cols = ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis', 'total_subsidios']
+        else:  # used_housing
+            if 'total_vis' in df_filtered.columns and 'total_no_vis' in df_filtered.columns:
+                cluster_data = df_filtered.groupby('departamento').agg({
+                    'total_vis': 'sum',
+                    'total_no_vis': 'sum',
+                    'total_subsidios': 'sum'
+                }).reset_index()
+                feature_cols = ['total_vis', 'total_no_vis', 'total_subsidios']
+        
+        if 'cluster_data' in locals() and len(cluster_data) >= 3:
+            # Seleccionar número de clusters
+            n_clusters = st.slider("Número de grupos (clusters)", min_value=2, max_value=min(6, len(cluster_data)), value=3)
+            
+            # Preparar features para clustering
+            X = cluster_data[feature_cols].fillna(0)
+            
+            # Normalizar datos
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Aplicar K-Means
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            cluster_data['cluster'] = kmeans.fit_predict(X_scaled)
+            cluster_data['cluster_label'] = cluster_data['cluster'].apply(lambda x: f'Grupo {x+1}')
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("### 📊 Distribución de Clusters")
+                cluster_counts = cluster_data['cluster_label'].value_counts().sort_index()
+                fig_cluster_dist = px.pie(
+                    values=cluster_counts.values,
+                    names=cluster_counts.index,
+                    title='Departamentos por Grupo',
+                    hole=0.4
+                )
+                fig_cluster_dist.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_cluster_dist, use_container_width=True)
+            
+            with col2:
+                st.markdown("### 🗺️ Departamentos por Cluster")
+                for i in range(n_clusters):
+                    depts_in_cluster = cluster_data[cluster_data['cluster'] == i]['departamento'].tolist()
+                    st.markdown(f"**Grupo {i+1}:** {', '.join(depts_in_cluster[:5])}{'...' if len(depts_in_cluster) > 5 else ''}")
+            
+            st.markdown("---")
+            
+            # Visualización de clusters
+            if dataset_type in ['general', 'rural', 'cmc_mcy']:
+                fig_scatter = px.scatter(
+                    cluster_data,
+                    x=feature_cols[0],
+                    y=feature_cols[1],
+                    color='cluster_label',
+                    size=feature_cols[2] if len(feature_cols) > 2 else None,
+                    hover_data=['departamento'],
+                    title='Visualización de Clusters',
+                    labels={
+                        feature_cols[0]: feature_cols[0].replace('_', ' ').title(),
+                        feature_cols[1]: feature_cols[1].replace('_', ' ').title()
+                    }
+                )
+            else:
+                fig_scatter = px.scatter(
+                    cluster_data,
+                    x='total_subsidios',
+                    y='total_vis',
+                    color='cluster_label',
+                    size='total_no_vis',
+                    hover_data=['departamento'],
+                    title='Visualización de Clusters',
+                    labels={
+                        'total_subsidios': 'Total Subsidios',
+                        'total_vis': 'Total VIS'
+                    }
+                )
+            
+            fig_scatter.update_traces(marker=dict(line=dict(width=1, color='DarkSlateGrey')))
+            st.plotly_chart(fig_scatter, use_container_width=True)
+            
+            # Características de cada cluster
+            st.markdown("### 📈 Características de cada Grupo")
+            cluster_summary = cluster_data.groupby('cluster_label')[feature_cols].mean().round(2)
+            st.dataframe(cluster_summary, use_container_width=True)
+        else:
+            st.warning("No hay suficientes datos para realizar clustering. Se requieren al menos 3 departamentos.")
+    else:
+        st.warning("No hay información de departamentos disponible para clustering.")
+
+with tab6:
     st.subheader("Tabla de Datos Detallados")
     
     if dataset_type == 'general':
