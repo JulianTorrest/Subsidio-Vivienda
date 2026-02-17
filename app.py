@@ -645,6 +645,21 @@ with tab1:
                 )
                 fig_housing_types.update_layout(height=600)
                 st.plotly_chart(fig_housing_types, use_container_width=True)
+            elif dataset_type == 'used_housing':
+                vis_data = df_filtered.groupby('departamento')[['total_vis', 'total_no_vis']].sum().reset_index()
+                vis_data = vis_data.head(20)
+                fig_vis_comparison = px.bar(
+                    vis_data,
+                    x=['total_vis', 'total_no_vis'],
+                    y='departamento',
+                    orientation='h',
+                    title='Top 20 Departamentos: VIS vs No VIS',
+                    labels={'value': 'Cantidad', 'departamento': 'Departamento', 'variable': 'Tipo'},
+                    barmode='group',
+                    color_discrete_map={'total_vis': '#1f4788', 'total_no_vis': '#28a745'}
+                )
+                fig_vis_comparison.update_layout(height=600)
+                st.plotly_chart(fig_vis_comparison, use_container_width=True)
             else:
                 fig_dept_valor = px.bar(
                     dept_data,
