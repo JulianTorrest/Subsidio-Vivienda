@@ -484,7 +484,7 @@ with tab3:
                 color='valor_asignado',
                 color_continuous_scale='Viridis'
             )
-            fig_prog_bar.update_xaxis(tickangle=-45)
+            fig_prog_bar.update_layout(xaxis_tickangle=-45)
             st.plotly_chart(fig_prog_bar, use_container_width=True)
 
 with tab4:
@@ -655,4 +655,3 @@ st.markdown("""
         <p>Última actualización: {}</p>
     </div>
 """.format(datetime.now().strftime("%d/%m/%Y %H:%M")), unsafe_allow_html=True)
-
