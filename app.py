@@ -276,14 +276,24 @@ else:
 
 year_col = 'a_o_de_asignacion' if dataset_type == 'rural' else 'a_o_de_asignaci_n'
 if year_col in df.columns:
-    years = sorted(df[year_col].dropna().unique())
+    years = df[year_col].dropna()
+    years = years[years > 1900]
+    years = sorted(years.unique())
     if len(years) > 0:
-        selected_years = st.sidebar.slider(
-            "Año de Asignación",
-            min_value=int(min(years)),
-            max_value=int(max(years)),
-            value=(int(min(years)), int(max(years)))
-        )
+        try:
+            min_year = int(min(years))
+            max_year = int(max(years))
+            if min_year < max_year:
+                selected_years = st.sidebar.slider(
+                    "Año de Asignación",
+                    min_value=min_year,
+                    max_value=max_year,
+                    value=(min_year, max_year)
+                )
+            else:
+                selected_years = (min_year, min_year)
+        except:
+            selected_years = None
     else:
         selected_years = None
 else:
