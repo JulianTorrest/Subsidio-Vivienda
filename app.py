@@ -125,22 +125,24 @@ def process_dataframe(df, dataset_type='general'):
     Process and clean the dataframe.
     dataset_type: 'general' or 'rural'
     """
-    df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('ó', 'o').str.replace('ñ', 'n').str.replace('í', 'i')
+    df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('ó', 'o').str.replace('ñ', 'n').str.replace('í', 'i').str.replace('.', '_')
     
     if dataset_type == 'general':
         if 'hogares' in df.columns:
-            df['hogares'] = pd.to_numeric(df['hogares'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
+            df['hogares'] = pd.to_numeric(df['hogares'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
         if 'valor_asignado' in df.columns:
-            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
+            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
         if 'ano_de_asignacion' in df.columns:
-            df['a_o_de_asignaci_n'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', ''), errors='coerce')
+            df['a_o_de_asignaci_n'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
     elif dataset_type == 'rural':
         if 'no_sfv_asignados' in df.columns:
-            df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
+            df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
+        elif 'no__sfv_asignados' in df.columns:
+            df['no_sfv_asignados'] = pd.to_numeric(df['no__sfv_asignados'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
         if 'valor_asignado' in df.columns:
-            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
+            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
         if 'ano_de_asignacion' in df.columns:
-            df['a_o_de_asignacion'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', ''), errors='coerce')
+            df['a_o_de_asignacion'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
     
     return df
 
@@ -672,3 +674,4 @@ st.markdown("""
         <p>Última actualización: {}</p>
     </div>
 """.format(datetime.now().strftime("%d/%m/%Y %H:%M")), unsafe_allow_html=True)
+
