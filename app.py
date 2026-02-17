@@ -365,7 +365,7 @@ else:
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Por Departamento", "📅 Por Año", "🏘️ Por Programa", "� Analítica Avanzada", "�📋 Datos Detallados"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Por Departamento", "📅 Por Año", "🏘️ Por Programa", "� Analítica Avanzada", "� Datos Detallados"])
 
 with tab1:
     st.subheader("Subsidios por Departamento")
@@ -623,12 +623,19 @@ with tab5:
             'valor_asignado': '${:,.0f}',
             'a_o_de_asignacion': '{:.0f}'
         } if all(col in df_filtered.columns for col in ['no_sfv_asignados', 'valor_asignado', 'a_o_de_asignacion']) else {}
-    
-    st.dataframe(
-        df_filtered.style.format(format_dict),
-        use_container_width=True,
-        height=500
-    )
+
+    if format_dict:
+        st.dataframe(
+            df_filtered.style.format(format_dict),
+            use_container_width=True,
+            height=500
+        )
+    else:
+        st.dataframe(
+            df_filtered,
+            use_container_width=True,
+            height=500
+        )
     
     file_prefix = 'subsidios_vivienda_rural' if dataset_type == 'rural' else 'subsidios_vivienda_general'
     st.download_button(
