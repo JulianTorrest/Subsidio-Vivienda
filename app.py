@@ -626,12 +626,19 @@ with tab5:
             'a_o_de_asignacion': '{:.0f}'
         } if all(col in df_filtered.columns for col in ['no_sfv_asignados', 'valor_asignado', 'a_o_de_asignacion']) else {}
 
-    if format_dict:
-        st.dataframe(
-            df_filtered.style.format(format_dict),
-            use_container_width=True,
-            height=500
-        )
+    if format_dict and len(df_filtered) > 0:
+        try:
+            st.dataframe(
+                df_filtered.style.format(format_dict, na_rep='-'),
+                use_container_width=True,
+                height=500
+            )
+        except:
+            st.dataframe(
+                df_filtered,
+                use_container_width=True,
+                height=500
+            )
     else:
         st.dataframe(
             df_filtered,
