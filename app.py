@@ -727,6 +727,18 @@ with tab2:
                     markers=True
                 )
                 st.plotly_chart(fig_housing_year, use_container_width=True)
+            elif dataset_type == 'used_housing':
+                vis_types_year = df_filtered.groupby(year_col)[['total_vis', 'total_no_vis']].sum().reset_index()
+                fig_vis_year = px.line(
+                    vis_types_year,
+                    x=year_col,
+                    y=['total_vis', 'total_no_vis'],
+                    title='VIS vs No VIS por Año',
+                    labels={year_col: 'Año', 'value': 'Cantidad', 'variable': 'Tipo'},
+                    markers=True,
+                    color_discrete_map={'total_vis': '#1f4788', 'total_no_vis': '#28a745'}
+                )
+                st.plotly_chart(fig_vis_year, use_container_width=True)
             else:
                 fig_year_valor = px.line(
                     year_data,
