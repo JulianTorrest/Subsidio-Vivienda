@@ -201,18 +201,18 @@ def process_dataframe(df, dataset_type='general'):
             df['total_subsidios'] = 0
     elif dataset_type == 'cmc_mcy':
         if 'departamento' in df.columns:
+            df['departamento'] = df['departamento'].str.strip()
             dept_mapping = {
-                'atlantico': 'atlantico',
-                'bogota_d__c_': 'bogota_d_c',
-                'bolivar': 'bolivar',
-                'boyaca': 'boyaca',
-                'caqueta': 'caqueta',
-                'cordoba': 'cordoba',
-                'guainia': 'guainia',
-                'quindio': 'quindio'
+                'ATLANTICO': 'ATLÁNTICO',
+                'BOGOTA D. C.': 'BOGOTÁ, D.C.',
+                'BOLIVAR': 'BOLÍVAR',
+                'BOYACA': 'BOYACÁ',
+                'CAQUETA': 'CAQUETÁ',
+                'CORDOBA': 'CÓRDOBA',
+                'GUAINIA': 'GUAINÍA',
+                'QUINDIO': 'QUINDÍO'
             }
-            for old_name, new_name in dept_mapping.items():
-                df.loc[df['departamento'] == old_name, 'departamento'] = new_name
+            df['departamento'] = df['departamento'].replace(dept_mapping)
         
         if 'no_sfv_asignados' in df.columns:
             df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
