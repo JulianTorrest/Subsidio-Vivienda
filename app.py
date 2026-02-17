@@ -125,20 +125,22 @@ def process_dataframe(df, dataset_type='general'):
     Process and clean the dataframe.
     dataset_type: 'general' or 'rural'
     """
+    df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('ó', 'o').str.replace('ñ', 'n').str.replace('í', 'i')
+    
     if dataset_type == 'general':
         if 'hogares' in df.columns:
-            df['hogares'] = pd.to_numeric(df['hogares'], errors='coerce')
+            df['hogares'] = pd.to_numeric(df['hogares'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
         if 'valor_asignado' in df.columns:
-            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'], errors='coerce')
-        if 'a_o_de_asignaci_n' in df.columns:
-            df['a_o_de_asignaci_n'] = pd.to_numeric(df['a_o_de_asignaci_n'], errors='coerce')
+            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
+        if 'ano_de_asignacion' in df.columns:
+            df['a_o_de_asignaci_n'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', ''), errors='coerce')
     elif dataset_type == 'rural':
         if 'no_sfv_asignados' in df.columns:
-            df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'], errors='coerce')
+            df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
         if 'valor_asignado' in df.columns:
-            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'], errors='coerce')
-        if 'a_o_de_asignacion' in df.columns:
-            df['a_o_de_asignacion'] = pd.to_numeric(df['a_o_de_asignacion'], errors='coerce')
+            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', ''), errors='coerce')
+        if 'ano_de_asignacion' in df.columns:
+            df['a_o_de_asignacion'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', ''), errors='coerce')
     
     return df
 
@@ -288,8 +290,8 @@ else:
     selected_years = None
 
 if dataset_type == 'general':
-    if 'estado_de_postulaci_n' in df.columns:
-        estados = ['Todos'] + sorted(df['estado_de_postulaci_n'].dropna().unique().tolist())
+    if 'estado_de_postulacion' in df.columns:
+        estados = ['Todos'] + sorted(df['estado_de_postulacion'].dropna().unique().tolist())
         selected_estado = st.sidebar.selectbox("Estado de Postulación", estados)
     else:
         selected_estado = 'Todos'
@@ -318,8 +320,8 @@ if selected_years and year_col in df.columns:
     ]
 
 if dataset_type == 'general':
-    if selected_estado != 'Todos' and 'estado_de_postulaci_n' in df.columns:
-        df_filtered = df_filtered[df_filtered['estado_de_postulaci_n'] == selected_estado]
+    if selected_estado != 'Todos' and 'estado_de_postulacion' in df.columns:
+        df_filtered = df_filtered[df_filtered['estado_de_postulacion'] == selected_estado]
 else:
     if selected_estado != 'Todos' and 'estado' in df.columns:
         df_filtered = df_filtered[df_filtered['estado'] == selected_estado]
@@ -653,3 +655,4 @@ st.markdown("""
         <p>Última actualización: {}</p>
     </div>
 """.format(datetime.now().strftime("%d/%m/%Y %H:%M")), unsafe_allow_html=True)
+
