@@ -15,6 +15,7 @@ st.set_page_config(
 CSV_GENERAL_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_De_Vivienda_Asignados_20260217.csv"
 CSV_RURAL_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_de_Vivienda_Rural_Asignados_20260217.csv"
 CSV_MILITARY_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_de_Vivienda_de_la_Caja_Promotora_de_Vivienda_Militar_y_de_Polic%C3%ADa_20260217.csv"
+CSV_CMC_MCY_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_Mejoramientos_Programas_CMC-MCY_20260217.csv"
 CSV_DATE = "20260217"
 API_BASE_URL = "https://www.datos.gov.co/resource/h2yr-zfb2.json"
 API_METADATA_URL = "https://www.datos.gov.co/api/views/h2yr-zfb2.json"
@@ -138,10 +139,22 @@ def load_csv_military_data():
         st.error(f"Traceback: {traceback.format_exc()}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=3600)
+def load_csv_cmc_mcy_data():
+    """
+    Load CMC-MCY housing improvement subsidy data from the CSV file hosted on GitHub.
+    """
+    try:
+        df = pd.read_csv(CSV_CMC_MCY_URL)
+        return process_dataframe(df, 'cmc_mcy')
+    except Exception as e:
+        st.error(f"Error al cargar el archivo CSV CMC-MCY: {str(e)}")
+        return pd.DataFrame()
+
 def process_dataframe(df, dataset_type='general'):
     """
     Process and clean the dataframe.
-    dataset_type: 'general', 'rural', or 'military'
+    dataset_type: 'general', 'rural', 'military', or 'cmc_mcy'
     """
     df = df.copy()
     df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('ó', 'o').str.replace('ñ', 'n').str.replace('í', 'i').str.replace('.', '_').str.replace('-', '_')
@@ -164,6 +177,13 @@ def process_dataframe(df, dataset_type='general'):
         if 'ano_de_asignacion' in df.columns:
             df['a_o_de_asignacion'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
     elif dataset_type == 'military':
+        if 'departamento' in df.columns:
+            df['departamento'] = df['departamento'].str.replace(
+                'archipielago_de_san_andres_providencia_y_santa_ca',
+                'archipielago_de_san_andres_providencia_y_santa_catalina',
+                regex=False
+            )
+        
         if 'ano' in df.columns:
             df['ano'] = pd.to_numeric(df['ano'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
         if 'trimestre' in df.columns:
@@ -179,6 +199,13 @@ def process_dataframe(df, dataset_type='general'):
             df['total_subsidios'] = df[existing_housing_cols].sum(axis=1)
         else:
             df['total_subsidios'] = 0
+    elif dataset_type == 'cmc_mcy':
+        if 'no_sfv_asignados' in df.columns:
+            df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
+        if 'valor_asignado' in df.columns:
+            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
+        if 'ano_de_asignacion' in df.columns:
+            df['ano_de_asignacion'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
     
     return df
 
@@ -247,7 +274,7 @@ st.markdown('<div class="sub-header">Camacol - Análisis de Subsidios Asignados 
 
 subsidy_type = st.radio(
     "Seleccione el tipo de subsidio:",
-    ["🏘️ Subsidio General", "🌾 Subsidio Rural", "🎖️ Subsidio Militar/Policía"],
+    ["🏘️ Subsidio General", "🌾 Subsidio Rural", "🎖️ Subsidio Militar/Policía", "🏗️ Mejoramiento CMC-MCY"],
     horizontal=True,
     label_visibility="collapsed"
 )
@@ -269,6 +296,12 @@ elif "🎖️ Subsidio Militar/Policía" in subsidy_type:
     data_source = "CSV Militar/Policía"
     data_date = CSV_DATE
     dataset_type = 'military'
+elif "🏗️ Mejoramiento CMC-MCY" in subsidy_type:
+    df_cmc_mcy = load_csv_cmc_mcy_data()
+    df = df_cmc_mcy
+    data_source = "CSV CMC-MCY"
+    data_date = CSV_DATE
+    dataset_type = 'cmc_mcy'
 else:
     df, data_source, data_date = load_data(force_api=st.session_state.force_refresh)
     dataset_type = 'general'
@@ -330,8 +363,8 @@ else:
 
 if dataset_type == 'military':
     year_col = 'ano'
-elif dataset_type == 'rural':
-    year_col = 'a_o_de_asignacion'
+elif dataset_type in ['rural', 'cmc_mcy']:
+    year_col = 'ano_de_asignacion'
 else:
     year_col = 'a_o_de_asignaci_n'
 
@@ -421,7 +454,7 @@ if dataset_type == 'general':
         if 'departamento' in df_filtered.columns:
             total_deptos = df_filtered['departamento'].nunique()
             st.metric("Departamentos", format_number(total_deptos))
-elif dataset_type == 'rural':
+elif dataset_type in ['rural', 'cmc_mcy']:
     with col1:
         total_sfv = df_filtered['no_sfv_asignados'].sum() if 'no_sfv_asignados' in df_filtered.columns else 0
         st.metric("Total SFV Asignados", format_number(total_sfv))
@@ -466,7 +499,7 @@ with tab1:
     if dataset_type == 'military':
         beneficiary_col = 'total_subsidios'
         beneficiary_label = 'Total Subsidios'
-    elif dataset_type == 'rural':
+    elif dataset_type in ['rural', 'cmc_mcy']:
         beneficiary_col = 'no_sfv_asignados'
         beneficiary_label = 'SFV Asignados'
     else:
@@ -536,8 +569,8 @@ with tab2:
         year_col = 'ano'
         beneficiary_col = 'total_subsidios'
         beneficiary_label = 'Total Subsidios'
-    elif dataset_type == 'rural':
-        year_col = 'a_o_de_asignacion'
+    elif dataset_type in ['rural', 'cmc_mcy']:
+        year_col = 'ano_de_asignacion'
         beneficiary_col = 'no_sfv_asignados'
         beneficiary_label = 'SFV Asignados'
     else:
@@ -664,10 +697,10 @@ with tab4:
         beneficiary_col = 'total_subsidios'
         beneficiary_label = 'Total Subsidios'
         year_col = 'ano'
-    elif dataset_type == 'rural':
+    elif dataset_type in ['rural', 'cmc_mcy']:
         beneficiary_col = 'no_sfv_asignados'
         beneficiary_label = 'SFV Asignados'
-        year_col = 'a_o_de_asignacion'
+        year_col = 'ano_de_asignacion'
     else:
         beneficiary_col = 'hogares'
         beneficiary_label = 'Hogares'
@@ -825,7 +858,7 @@ with tab4:
             )
             st.plotly_chart(fig_trimestre, use_container_width=True)
     else:
-        st.markdown("### �🗺️ Mapa de Calor: Municipios")
+        st.markdown("### ��️ Mapa de Calor: Municipios")
         if 'municipio' in df_filtered.columns and beneficiary_col in df_filtered.columns:
             muni_data = df_filtered.groupby('municipio').agg({
                 beneficiary_col: 'sum',
@@ -852,13 +885,13 @@ with tab5:
             'valor_asignado': '${:,.0f}',
             'a_o_de_asignaci_n': '{:.0f}'
         } if all(col in df_filtered.columns for col in ['hogares', 'valor_asignado', 'a_o_de_asignaci_n']) else {}
-    elif dataset_type == 'rural':
+    elif dataset_type in ['rural', 'cmc_mcy']:
         format_dict = {
             'no_sfv_asignados': '{:,.0f}',
             'valor_asignado': '${:,.0f}',
-            'a_o_de_asignacion': '{:.0f}'
-        } if all(col in df_filtered.columns for col in ['no_sfv_asignados', 'valor_asignado', 'a_o_de_asignacion']) else {}
-    else:
+            'ano_de_asignacion': '{:.0f}'
+        } if all(col in df_filtered.columns for col in ['no_sfv_asignados', 'valor_asignado', 'ano_de_asignacion']) else {}
+    elif dataset_type == 'military':
         format_dict = {
             'ano': '{:.0f}',
             'trimestre': '{:.0f}',
@@ -893,6 +926,8 @@ with tab5:
         file_prefix = 'subsidios_vivienda_militar_policia'
     elif dataset_type == 'rural':
         file_prefix = 'subsidios_vivienda_rural'
+    elif dataset_type == 'cmc_mcy':
+        file_prefix = 'subsidios_mejoramiento_cmc_mcy'
     else:
         file_prefix = 'subsidios_vivienda_general'
     
