@@ -16,6 +16,7 @@ CSV_GENERAL_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivi
 CSV_RURAL_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_de_Vivienda_Rural_Asignados_20260217.csv"
 CSV_MILITARY_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_de_Vivienda_de_la_Caja_Promotora_de_Vivienda_Militar_y_de_Polic%C3%ADa_20260217.csv"
 CSV_CMC_MCY_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_Mejoramientos_Programas_CMC-MCY_20260217.csv"
+CSV_USED_HOUSING_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_de_vivienda_-_Vivienda_USADA_20260217.csv"
 CSV_DATE = "20260217"
 API_BASE_URL = "https://www.datos.gov.co/resource/h2yr-zfb2.json"
 API_METADATA_URL = "https://www.datos.gov.co/api/views/h2yr-zfb2.json"
@@ -151,10 +152,22 @@ def load_csv_cmc_mcy_data():
         st.error(f"Error al cargar el archivo CSV CMC-MCY: {str(e)}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=3600)
+def load_csv_used_housing_data():
+    """
+    Load used housing subsidy data from the CSV file hosted on GitHub.
+    """
+    try:
+        df = pd.read_csv(CSV_USED_HOUSING_URL)
+        return process_dataframe(df, 'used_housing')
+    except Exception as e:
+        st.error(f"Error al cargar el archivo CSV Vivienda Usada: {str(e)}")
+        return pd.DataFrame()
+
 def process_dataframe(df, dataset_type='general'):
     """
     Process and clean the dataframe.
-    dataset_type: 'general', 'rural', 'military', or 'cmc_mcy'
+    dataset_type: 'general', 'rural', 'military', 'cmc_mcy', or 'used_housing'
     """
     df = df.copy()
     df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('ó', 'o').str.replace('ñ', 'n').str.replace('í', 'i').str.replace('.', '_').str.replace('-', '_')
@@ -220,6 +233,31 @@ def process_dataframe(df, dataset_type='general'):
             df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
         if 'ano_de_asignacion' in df.columns:
             df['ano_de_asignacion'] = pd.to_numeric(df['ano_de_asignacion'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
+    elif dataset_type == 'used_housing':
+        if 'ano' in df.columns:
+            df['ano'] = pd.to_numeric(df['ano'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
+        if 'trimestre' in df.columns:
+            df['trimestre'] = pd.to_numeric(df['trimestre'], errors='coerce')
+        
+        force_cols = [
+            'vis_policia_nacional', 'vis_ejercito_nacional', 'vis_fuerza_aerea_colombiana', 
+            'vis_armada_nacional', 'vis_otros',
+            'no_vis_policia_nacional', 'no_vis_ejercito_nacional', 'no_vis_fuerza_aerea_colombiana',
+            'no_vis_armada_nacional', 'no_vis_otros'
+        ]
+        for col in force_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
+        
+        vis_cols = [c for c in force_cols if c.startswith('vis_') and c in df.columns]
+        no_vis_cols = [c for c in force_cols if c.startswith('no_vis_') and c in df.columns]
+        
+        if vis_cols:
+            df['total_vis'] = df[vis_cols].sum(axis=1)
+        if no_vis_cols:
+            df['total_no_vis'] = df[no_vis_cols].sum(axis=1)
+        if vis_cols or no_vis_cols:
+            df['total_subsidios'] = df[vis_cols + no_vis_cols].sum(axis=1)
     
     return df
 
@@ -288,7 +326,7 @@ st.markdown('<div class="sub-header">Camacol - Análisis de Subsidios Asignados 
 
 subsidy_type = st.radio(
     "Seleccione el tipo de subsidio:",
-    ["🏘️ Subsidio General", "🌾 Subsidio Rural", "🎖️ Subsidio Militar/Policía", "🏗️ Mejoramiento CMC-MCY"],
+    ["🏘️ Subsidio General", "🌾 Subsidio Rural", "🎖️ Subsidio Militar/Policía", "🏗️ Mejoramiento CMC-MCY", "🏠 Vivienda Usada"],
     horizontal=True,
     label_visibility="collapsed"
 )
@@ -316,6 +354,12 @@ elif "🏗️ Mejoramiento CMC-MCY" in subsidy_type:
     data_source = "CSV CMC-MCY"
     data_date = CSV_DATE
     dataset_type = 'cmc_mcy'
+elif "🏠 Vivienda Usada" in subsidy_type:
+    df_used = load_csv_used_housing_data()
+    df = df_used
+    data_source = "CSV Vivienda Usada"
+    data_date = CSV_DATE
+    dataset_type = 'used_housing'
 else:
     df, data_source, data_date = load_data(force_api=st.session_state.force_refresh)
     dataset_type = 'general'
@@ -352,7 +396,7 @@ if 'departamento' in df.columns:
 else:
     selected_dept = 'Todos'
 
-if dataset_type != 'military':
+if dataset_type not in ['military', 'used_housing']:
     if 'municipio' in df.columns and selected_dept != 'Todos':
         municipios_filtered = df[df['departamento'] == selected_dept]['municipio'].dropna().unique()
         municipios = ['Todos'] + sorted(municipios_filtered.tolist())
@@ -375,7 +419,7 @@ else:
     else:
         selected_trimestre = 'Todos'
 
-if dataset_type == 'military':
+if dataset_type in ['military', 'used_housing']:
     year_col = 'ano'
 elif dataset_type in ['rural', 'cmc_mcy']:
     year_col = 'ano_de_asignacion'
@@ -424,7 +468,7 @@ df_filtered = df.copy()
 if selected_dept != 'Todos' and 'departamento' in df.columns:
     df_filtered = df_filtered[df_filtered['departamento'] == selected_dept]
 
-if dataset_type != 'military':
+if dataset_type not in ['military', 'used_housing']:
     if selected_muni != 'Todos' and 'municipio' in df.columns:
         df_filtered = df_filtered[df_filtered['municipio'] == selected_muni]
     
@@ -446,6 +490,28 @@ if dataset_type == 'general':
 else:
     if selected_estado != 'Todos' and 'estado' in df.columns:
         df_filtered = df_filtered[df_filtered['estado'] == selected_estado]
+
+# Mostrar filtros activos
+active_filters = []
+if selected_dept != 'Todos':
+    active_filters.append(f"📍 Departamento: **{selected_dept}**")
+if dataset_type not in ['military', 'used_housing']:
+    if selected_muni != 'Todos':
+        active_filters.append(f"🏙️ Municipio: **{selected_muni}**")
+    if selected_prog != 'Todos':
+        active_filters.append(f"📋 Programa: **{selected_prog}**")
+else:
+    if selected_trimestre != 'Todos':
+        active_filters.append(f"📅 Trimestre: **{selected_trimestre}**")
+if selected_years:
+    active_filters.append(f"📆 Años: **{selected_years[0]} - {selected_years[1]}**")
+if dataset_type == 'general' and selected_estado != 'Todos':
+    active_filters.append(f"✅ Estado: **{selected_estado}**")
+elif dataset_type != 'general' and selected_estado != 'Todos':
+    active_filters.append(f"✅ Estado: **{selected_estado}**")
+
+if active_filters:
+    st.info("🔍 **Filtros activos:** " + " | ".join(active_filters))
 
 st.header("📊 Indicadores Principales")
 
@@ -485,7 +551,7 @@ elif dataset_type in ['rural', 'cmc_mcy']:
         if 'departamento' in df_filtered.columns:
             total_deptos = df_filtered['departamento'].nunique()
             st.metric("Departamentos", format_number(total_deptos))
-else:
+elif dataset_type == 'military':
     with col1:
         total_subsidios = df_filtered['total_subsidios'].sum() if 'total_subsidios' in df_filtered.columns else 0
         st.metric("Total Subsidios", format_number(total_subsidios))
@@ -502,6 +568,23 @@ else:
         if 'departamento' in df_filtered.columns:
             total_deptos = df_filtered['departamento'].nunique()
             st.metric("Departamentos", format_number(total_deptos))
+else:
+    with col1:
+        total_subsidios = df_filtered['total_subsidios'].sum() if 'total_subsidios' in df_filtered.columns else 0
+        st.metric("Total Subsidios", format_number(total_subsidios))
+    
+    with col2:
+        total_vis = df_filtered['total_vis'].sum() if 'total_vis' in df_filtered.columns else 0
+        st.metric("Total VIS", format_number(total_vis))
+    
+    with col3:
+        total_no_vis = df_filtered['total_no_vis'].sum() if 'total_no_vis' in df_filtered.columns else 0
+        st.metric("Total No VIS", format_number(total_no_vis))
+    
+    with col4:
+        if 'departamento' in df_filtered.columns:
+            total_deptos = df_filtered['departamento'].nunique()
+            st.metric("Departamentos", format_number(total_deptos))
 
 st.markdown("---")
 
@@ -510,7 +593,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Por Departamento", "📅 Por Año"
 with tab1:
     st.subheader("Subsidios por Departamento")
     
-    if dataset_type == 'military':
+    if dataset_type in ['military', 'used_housing']:
         beneficiary_col = 'total_subsidios'
         beneficiary_label = 'Total Subsidios'
     elif dataset_type in ['rural', 'cmc_mcy']:
@@ -521,7 +604,7 @@ with tab1:
         beneficiary_label = 'Hogares'
     
     if 'departamento' in df_filtered.columns and beneficiary_col in df_filtered.columns:
-        if dataset_type == 'military':
+        if dataset_type in ['military', 'used_housing']:
             dept_data = df_filtered.groupby('departamento').agg({
                 beneficiary_col: 'sum'
             }).reset_index().sort_values(beneficiary_col, ascending=False).head(20)
@@ -579,7 +662,7 @@ with tab1:
 with tab2:
     st.subheader("Evolución Temporal de Subsidios")
     
-    if dataset_type == 'military':
+    if dataset_type in ['military', 'used_housing']:
         year_col = 'ano'
         beneficiary_col = 'total_subsidios'
         beneficiary_label = 'Total Subsidios'
@@ -593,7 +676,7 @@ with tab2:
         beneficiary_label = 'Hogares'
     
     if year_col in df_filtered.columns:
-        if dataset_type == 'military':
+        if dataset_type in ['military', 'used_housing']:
             year_data = df_filtered.groupby(year_col).agg({
                 beneficiary_col: 'sum'
             }).reset_index().sort_values(year_col)
@@ -671,6 +754,49 @@ with tab3:
                 color_continuous_scale='Viridis'
             )
             st.plotly_chart(fig_housing_bar, use_container_width=True)
+    elif dataset_type == 'used_housing':
+        st.info("📊 El dataset Vivienda Usada no contiene información por programa. Mostrando análisis por fuerza militar.")
+        
+        force_cols = {
+            'vis_policia_nacional': 'Policía Nacional',
+            'vis_ejercito_nacional': 'Ejército Nacional',
+            'vis_fuerza_aerea_colombiana': 'Fuerza Aérea',
+            'vis_armada_nacional': 'Armada Nacional',
+            'vis_otros': 'Otros',
+            'no_vis_policia_nacional': 'Policía Nacional (No VIS)',
+            'no_vis_ejercito_nacional': 'Ejército Nacional (No VIS)',
+            'no_vis_fuerza_aerea_colombiana': 'Fuerza Aérea (No VIS)',
+            'no_vis_armada_nacional': 'Armada Nacional (No VIS)',
+            'no_vis_otros': 'Otros (No VIS)'
+        }
+        
+        force_data = {}
+        for col, label in force_cols.items():
+            if col in df_filtered.columns:
+                force_data[label] = df_filtered[col].sum()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig_force_pie = px.pie(
+                values=list(force_data.values()),
+                names=list(force_data.keys()),
+                title='Distribución por Fuerza Militar',
+                hole=0.4
+            )
+            st.plotly_chart(fig_force_pie, use_container_width=True)
+        
+        with col2:
+            fig_force_bar = px.bar(
+                x=list(force_data.values()),
+                y=list(force_data.keys()),
+                orientation='h',
+                title='Subsidios por Fuerza Militar',
+                labels={'x': 'Cantidad', 'y': 'Fuerza'},
+                color=list(force_data.values()),
+                color_continuous_scale='Viridis'
+            )
+            st.plotly_chart(fig_force_bar, use_container_width=True)
     elif 'programa' in df_filtered.columns:
         if dataset_type in ['rural', 'cmc_mcy']:
             beneficiary_col = 'no_sfv_asignados'
@@ -712,7 +838,7 @@ with tab3:
 with tab4:
     st.subheader("📊 Analítica Avanzada")
     
-    if dataset_type == 'military':
+    if dataset_type in ['military', 'used_housing']:
         beneficiary_col = 'total_subsidios'
         beneficiary_label = 'Total Subsidios'
         year_col = 'ano'
@@ -920,6 +1046,14 @@ with tab5:
             'usada_no_vis': '{:,.0f}',
             'total_subsidios': '{:,.0f}'
         } if all(col in df_filtered.columns for col in ['ano', 'trimestre']) else {}
+    else:
+        format_dict = {
+            'ano': '{:.0f}',
+            'trimestre': '{:.0f}',
+            'total_vis': '{:,.0f}',
+            'total_no_vis': '{:,.0f}',
+            'total_subsidios': '{:,.0f}'
+        } if all(col in df_filtered.columns for col in ['ano', 'trimestre']) else {}
 
     if format_dict and len(df_filtered) > 0:
         try:
@@ -947,6 +1081,8 @@ with tab5:
         file_prefix = 'subsidios_vivienda_rural'
     elif dataset_type == 'cmc_mcy':
         file_prefix = 'subsidios_mejoramiento_cmc_mcy'
+    elif dataset_type == 'used_housing':
+        file_prefix = 'subsidios_vivienda_usada'
     else:
         file_prefix = 'subsidios_vivienda_general'
     
