@@ -163,21 +163,16 @@ def process_dataframe(df, dataset_type='general'):
         if 'trimestre' in df.columns:
             df['trimestre'] = pd.to_numeric(df['trimestre'], errors='coerce')
         
-        col_mapping = {
-            'nueva_vis': ['nueva_vis', 'nueva__vis'],
-            'nueva_no_vis': ['nueva_no_vis', 'nueva__no_vis'],
-            'usada_vis': ['usada_vis', 'usada___vis', 'usada__vis'],
-            'usada_no_vis': ['usada_no_vis', 'usada__no_vis']
-        }
+        housing_cols = ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']
+        for col in housing_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
         
-        for target_col, possible_names in col_mapping.items():
-            for possible_name in possible_names:
-                if possible_name in df.columns:
-                    df[target_col] = pd.to_numeric(df[possible_name].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
-                    break
-        
-        if all(col in df.columns for col in ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']):
-            df['total_subsidios'] = df[['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']].sum(axis=1)
+        existing_housing_cols = [col for col in housing_cols if col in df.columns]
+        if len(existing_housing_cols) > 0:
+            df['total_subsidios'] = df[existing_housing_cols].sum(axis=1)
+        else:
+            df['total_subsidios'] = 0
     
     return df
 
