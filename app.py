@@ -121,16 +121,21 @@ def load_csv_rural_data():
         st.error(f"Error al cargar el archivo CSV rural: {str(e)}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner="Cargando datos militares...")
 def load_csv_military_data():
     """
     Load military/police subsidy data from the CSV file hosted on GitHub.
     """
     try:
         df = pd.read_csv(CSV_MILITARY_URL)
-        return process_dataframe(df, 'military')
+        processed_df = process_dataframe(df, 'military')
+        if processed_df.empty:
+            st.error("El dataframe procesado está vacío")
+        return processed_df
     except Exception as e:
         st.error(f"Error al cargar el archivo CSV militar/policía: {str(e)}")
+        import traceback
+        st.error(f"Traceback: {traceback.format_exc()}")
         return pd.DataFrame()
 
 def process_dataframe(df, dataset_type='general'):
@@ -138,6 +143,7 @@ def process_dataframe(df, dataset_type='general'):
     Process and clean the dataframe.
     dataset_type: 'general', 'rural', or 'military'
     """
+    df = df.copy()
     df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('ó', 'o').str.replace('ñ', 'n').str.replace('í', 'i').str.replace('.', '_').str.replace('-', '_')
     df.columns = df.columns.str.replace('__+', '_', regex=True)
     
@@ -654,9 +660,18 @@ with tab3:
 with tab4:
     st.subheader("📊 Analítica Avanzada")
     
-    beneficiary_col = 'no_sfv_asignados' if dataset_type == 'rural' else 'hogares'
-    beneficiary_label = 'SFV Asignados' if dataset_type == 'rural' else 'Hogares'
-    year_col = 'a_o_de_asignacion' if dataset_type == 'rural' else 'a_o_de_asignaci_n'
+    if dataset_type == 'military':
+        beneficiary_col = 'total_subsidios'
+        beneficiary_label = 'Total Subsidios'
+        year_col = 'ano'
+    elif dataset_type == 'rural':
+        beneficiary_col = 'no_sfv_asignados'
+        beneficiary_label = 'SFV Asignados'
+        year_col = 'a_o_de_asignacion'
+    else:
+        beneficiary_col = 'hogares'
+        beneficiary_label = 'Hogares'
+        year_col = 'a_o_de_asignaci_n'
     
     col1, col2 = st.columns(2)
     
@@ -681,29 +696,48 @@ with tab4:
             st.plotly_chart(fig_concentration, use_container_width=True)
     
     with col2:
-        st.markdown("### 💰 Valor Promedio por Beneficiario")
-        if beneficiary_col in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
-            total_valor = df_filtered['valor_asignado'].sum()
-            total_beneficiaries = df_filtered[beneficiary_col].sum()
-            avg_value = total_valor / total_beneficiaries if total_beneficiaries > 0 else 0
-            
-            st.metric("Valor Promedio", format_currency(avg_value))
-            
-            if 'departamento' in df_filtered.columns:
-                dept_avg = df_filtered.groupby('departamento').apply(
-                    lambda x: x['valor_asignado'].sum() / x[beneficiary_col].sum() if x[beneficiary_col].sum() > 0 else 0
-                ).nlargest(10)
+        if dataset_type == 'military':
+            st.markdown("### 🏘️ Distribución VIS vs No VIS")
+            if all(col in df_filtered.columns for col in ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']):
+                total_vis = df_filtered[['nueva_vis', 'usada_vis']].sum().sum()
+                total_no_vis = df_filtered[['nueva_no_vis', 'usada_no_vis']].sum().sum()
+                total = total_vis + total_no_vis
                 
-                fig_avg = px.bar(
-                    x=dept_avg.values,
-                    y=dept_avg.index,
-                    orientation='h',
-                    title='Top 10 Departamentos por Valor Promedio',
-                    labels={'x': 'Valor Promedio (COP)', 'y': 'Departamento'},
-                    color=dept_avg.values,
-                    color_continuous_scale='Greens'
-                )
-                st.plotly_chart(fig_avg, use_container_width=True)
+                if total > 0:
+                    vis_pct = (total_vis / total * 100)
+                    st.metric("% VIS", f"{vis_pct:.1f}%")
+                    
+                    fig_vis_comparison = px.pie(
+                        values=[total_vis, total_no_vis],
+                        names=['VIS', 'No VIS'],
+                        title='Distribución VIS vs No VIS',
+                        color_discrete_sequence=['#1f4788', '#28a745']
+                    )
+                    st.plotly_chart(fig_vis_comparison, use_container_width=True)
+        else:
+            st.markdown("### 💰 Valor Promedio por Beneficiario")
+            if beneficiary_col in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
+                total_valor = df_filtered['valor_asignado'].sum()
+                total_beneficiaries = df_filtered[beneficiary_col].sum()
+                avg_value = total_valor / total_beneficiaries if total_beneficiaries > 0 else 0
+                
+                st.metric("Valor Promedio", format_currency(avg_value))
+                
+                if 'departamento' in df_filtered.columns:
+                    dept_avg = df_filtered.groupby('departamento').apply(
+                        lambda x: x['valor_asignado'].sum() / x[beneficiary_col].sum() if x[beneficiary_col].sum() > 0 else 0
+                    ).nlargest(10)
+                    
+                    fig_avg = px.bar(
+                        x=dept_avg.values,
+                        y=dept_avg.index,
+                        orientation='h',
+                        title='Top 10 Departamentos por Valor Promedio',
+                        labels={'x': 'Valor Promedio (COP)', 'y': 'Departamento'},
+                        color=dept_avg.values,
+                        color_continuous_scale='Greens'
+                    )
+                    st.plotly_chart(fig_avg, use_container_width=True)
     
     st.markdown("---")
     
@@ -728,51 +762,86 @@ with tab4:
                 st.plotly_chart(fig_trend, use_container_width=True)
     
     with col4:
-        st.markdown("### 🏘️ Distribución por Programa")
-        if 'programa' in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
-            prog_summary = df_filtered.groupby('programa').agg({
-                beneficiary_col: 'sum',
-                'valor_asignado': 'sum'
-            }).reset_index()
-            
-            prog_summary['avg_value'] = prog_summary['valor_asignado'] / prog_summary[beneficiary_col]
-            prog_summary = prog_summary.sort_values('avg_value', ascending=False)
-            
-            fig_prog_scatter = px.scatter(
-                prog_summary,
-                x=beneficiary_col,
-                y='valor_asignado',
-                size='avg_value',
-                color='programa',
-                title='Programas: Beneficiarios vs Valor Total',
-                labels={
-                    beneficiary_col: beneficiary_label,
-                    'valor_asignado': 'Valor Total (COP)',
-                    'avg_value': 'Valor Promedio'
-                },
-                hover_data=['avg_value']
-            )
-            st.plotly_chart(fig_prog_scatter, use_container_width=True)
+        if dataset_type == 'military':
+            st.markdown("### � Nueva vs Usada")
+            if all(col in df_filtered.columns for col in ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']):
+                total_nueva = df_filtered[['nueva_vis', 'nueva_no_vis']].sum().sum()
+                total_usada = df_filtered[['usada_vis', 'usada_no_vis']].sum().sum()
+                total = total_nueva + total_usada
+                
+                if total > 0:
+                    nueva_pct = (total_nueva / total * 100)
+                    st.metric("% Nueva", f"{nueva_pct:.1f}%")
+                    
+                    fig_nueva_usada = px.pie(
+                        values=[total_nueva, total_usada],
+                        names=['Nueva', 'Usada'],
+                        title='Distribución Nueva vs Usada',
+                        color_discrete_sequence=['#ff6b6b', '#4ecdc4']
+                    )
+                    st.plotly_chart(fig_nueva_usada, use_container_width=True)
+        else:
+            st.markdown("### �️ Distribución por Programa")
+            if 'programa' in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
+                prog_summary = df_filtered.groupby('programa').agg({
+                    beneficiary_col: 'sum',
+                    'valor_asignado': 'sum'
+                }).reset_index()
+                
+                prog_summary['avg_value'] = prog_summary['valor_asignado'] / prog_summary[beneficiary_col]
+                prog_summary = prog_summary.sort_values('avg_value', ascending=False)
+                
+                fig_prog_scatter = px.scatter(
+                    prog_summary,
+                    x=beneficiary_col,
+                    y='valor_asignado',
+                    size='avg_value',
+                    color='programa',
+                    title='Programas: Beneficiarios vs Valor Total',
+                    labels={
+                        beneficiary_col: beneficiary_label,
+                        'valor_asignado': 'Valor Total (COP)',
+                        'avg_value': 'Valor Promedio'
+                    },
+                    hover_data=['avg_value']
+                )
+                st.plotly_chart(fig_prog_scatter, use_container_width=True)
     
     st.markdown("---")
     
-    st.markdown("### 🗺️ Mapa de Calor: Municipios")
-    if 'municipio' in df_filtered.columns and beneficiary_col in df_filtered.columns:
-        muni_data = df_filtered.groupby('municipio').agg({
-            beneficiary_col: 'sum',
-            'valor_asignado': 'sum'
-        }).reset_index().sort_values(beneficiary_col, ascending=False).head(30)
-        
-        fig_heatmap = px.density_heatmap(
-            df_filtered.head(1000),
-            x='departamento',
-            y='municipio',
-            z=beneficiary_col,
-            title='Distribución de Subsidios por Departamento y Municipio (Top 1000 registros)',
-            color_continuous_scale='YlOrRd'
-        )
-        fig_heatmap.update_layout(height=500)
-        st.plotly_chart(fig_heatmap, use_container_width=True)
+    if dataset_type == 'military':
+        st.markdown("### � Análisis por Trimestre")
+        if 'trimestre' in df_filtered.columns and 'total_subsidios' in df_filtered.columns:
+            trimestre_data = df_filtered.groupby('trimestre')['total_subsidios'].sum().reset_index()
+            
+            fig_trimestre = px.bar(
+                trimestre_data,
+                x='trimestre',
+                y='total_subsidios',
+                title='Subsidios por Trimestre',
+                labels={'trimestre': 'Trimestre', 'total_subsidios': 'Total Subsidios'},
+                color='total_subsidios',
+                color_continuous_scale='Blues'
+            )
+            st.plotly_chart(fig_trimestre, use_container_width=True)
+    else:
+        st.markdown("### �🗺️ Mapa de Calor: Municipios")
+        if 'municipio' in df_filtered.columns and beneficiary_col in df_filtered.columns:
+            muni_data = df_filtered.groupby('municipio').agg({
+                beneficiary_col: 'sum',
+                'valor_asignado': 'sum'
+            }).reset_index().sort_values(beneficiary_col, ascending=False).head(30)
+            
+            fig_heatmap = px.density_heatmap(
+                df_filtered.head(1000),
+                x='departamento',
+                y='municipio',
+                z=beneficiary_col,
+                title='Distribución de Subsidios por Departamento y Municipio (Top 1000 registros)',
+                color_continuous_scale='YlOrRd'
+            )
+            fig_heatmap.update_layout(height=500)
+            st.plotly_chart(fig_heatmap, use_container_width=True)
 
 with tab5:
     st.subheader("Tabla de Datos Detallados")
@@ -842,3 +911,4 @@ st.markdown("""
         <p>Última actualización: {}</p>
     </div>
 """.format(datetime.now().strftime("%d/%m/%Y %H:%M")), unsafe_allow_html=True)
+True)
