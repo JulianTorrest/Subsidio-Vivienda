@@ -12,7 +12,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-CSV_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_De_Vivienda_Asignados_20260217.csv"
+CSV_GENERAL_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_De_Vivienda_Asignados_20260217.csv"
+CSV_RURAL_URL = "https://raw.githubusercontent.com/JulianTorrest/Subsidio-Vivienda/refs/heads/main/Subsidios_de_Vivienda_Rural_Asignados_20260217.csv"
 CSV_DATE = "20260217"
 API_BASE_URL = "https://www.datos.gov.co/resource/h2yr-zfb2.json"
 API_METADATA_URL = "https://www.datos.gov.co/api/views/h2yr-zfb2.json"
@@ -91,32 +92,53 @@ def fetch_data_from_api():
     
     if all_data:
         df = pd.DataFrame(all_data)
-        return process_dataframe(df)
+        return process_dataframe(df, 'general')
     
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def load_csv_data():
     """
-    Load data from the CSV file hosted on GitHub.
+    Load general subsidy data from the CSV file hosted on GitHub.
     """
     try:
-        df = pd.read_csv(CSV_URL)
-        return process_dataframe(df)
+        df = pd.read_csv(CSV_GENERAL_URL)
+        return process_dataframe(df, 'general')
     except Exception as e:
-        st.error(f"Error al cargar el archivo CSV: {str(e)}")
+        st.error(f"Error al cargar el archivo CSV general: {str(e)}")
         return pd.DataFrame()
 
-def process_dataframe(df):
+@st.cache_data(ttl=3600)
+def load_csv_rural_data():
+    """
+    Load rural subsidy data from the CSV file hosted on GitHub.
+    """
+    try:
+        df = pd.read_csv(CSV_RURAL_URL)
+        return process_dataframe(df, 'rural')
+    except Exception as e:
+        st.error(f"Error al cargar el archivo CSV rural: {str(e)}")
+        return pd.DataFrame()
+
+def process_dataframe(df, dataset_type='general'):
     """
     Process and clean the dataframe.
+    dataset_type: 'general' or 'rural'
     """
-    if 'hogares' in df.columns:
-        df['hogares'] = pd.to_numeric(df['hogares'], errors='coerce')
-    if 'valor_asignado' in df.columns:
-        df['valor_asignado'] = pd.to_numeric(df['valor_asignado'], errors='coerce')
-    if 'a_o_de_asignaci_n' in df.columns:
-        df['a_o_de_asignaci_n'] = pd.to_numeric(df['a_o_de_asignaci_n'], errors='coerce')
+    if dataset_type == 'general':
+        if 'hogares' in df.columns:
+            df['hogares'] = pd.to_numeric(df['hogares'], errors='coerce')
+        if 'valor_asignado' in df.columns:
+            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'], errors='coerce')
+        if 'a_o_de_asignaci_n' in df.columns:
+            df['a_o_de_asignaci_n'] = pd.to_numeric(df['a_o_de_asignaci_n'], errors='coerce')
+    elif dataset_type == 'rural':
+        if 'no_sfv_asignados' in df.columns:
+            df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'], errors='coerce')
+        if 'valor_asignado' in df.columns:
+            df['valor_asignado'] = pd.to_numeric(df['valor_asignado'], errors='coerce')
+        if 'a_o_de_asignacion' in df.columns:
+            df['a_o_de_asignacion'] = pd.to_numeric(df['a_o_de_asignacion'], errors='coerce')
     
     return df
 
@@ -183,10 +205,27 @@ st.markdown("""
 st.markdown('<div class="main-header">🏠 Subsidios de Vivienda Nacional</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Camacol - Análisis de Subsidios Asignados en Colombia</div>', unsafe_allow_html=True)
 
+subsidy_type = st.radio(
+    "Seleccione el tipo de subsidio:",
+    ["🏘️ Subsidio General", "🌾 Subsidio Rural"],
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+st.markdown("---")
+
 if 'force_refresh' not in st.session_state:
     st.session_state.force_refresh = False
 
-df, data_source, data_date = load_data(force_api=st.session_state.force_refresh)
+if "🌾 Subsidio Rural" in subsidy_type:
+    df_rural = load_csv_rural_data()
+    df = df_rural
+    data_source = "CSV Rural"
+    data_date = CSV_DATE
+    dataset_type = 'rural'
+else:
+    df, data_source, data_date = load_data(force_api=st.session_state.force_refresh)
+    dataset_type = 'general'
 
 if st.session_state.force_refresh:
     st.session_state.force_refresh = False
@@ -206,10 +245,11 @@ with col_info2:
     st.info(f"📅 **Fuente:** {data_source} | **Fecha:** {formatted_date}")
 
 with col_info3:
-    if st.button("🔄 Actualizar desde API", help="Forzar actualización desde la API"):
-        st.session_state.force_refresh = True
-        st.cache_data.clear()
-        st.rerun()
+    if dataset_type == 'general':
+        if st.button("🔄 Actualizar desde API", help="Forzar actualización desde la API"):
+            st.session_state.force_refresh = True
+            st.cache_data.clear()
+            st.rerun()
 
 st.sidebar.header("🔍 Filtros")
 
@@ -232,8 +272,9 @@ if 'programa' in df.columns:
 else:
     selected_prog = 'Todos'
 
-if 'a_o_de_asignaci_n' in df.columns:
-    years = sorted(df['a_o_de_asignaci_n'].dropna().unique())
+year_col = 'a_o_de_asignacion' if dataset_type == 'rural' else 'a_o_de_asignaci_n'
+if year_col in df.columns:
+    years = sorted(df[year_col].dropna().unique())
     if len(years) > 0:
         selected_years = st.sidebar.slider(
             "Año de Asignación",
@@ -246,11 +287,18 @@ if 'a_o_de_asignaci_n' in df.columns:
 else:
     selected_years = None
 
-if 'estado_de_postulaci_n' in df.columns:
-    estados = ['Todos'] + sorted(df['estado_de_postulaci_n'].dropna().unique().tolist())
-    selected_estado = st.sidebar.selectbox("Estado de Postulación", estados)
+if dataset_type == 'general':
+    if 'estado_de_postulaci_n' in df.columns:
+        estados = ['Todos'] + sorted(df['estado_de_postulaci_n'].dropna().unique().tolist())
+        selected_estado = st.sidebar.selectbox("Estado de Postulación", estados)
+    else:
+        selected_estado = 'Todos'
 else:
-    selected_estado = 'Todos'
+    if 'estado' in df.columns:
+        estados = ['Todos'] + sorted(df['estado'].dropna().unique().tolist())
+        selected_estado = st.sidebar.selectbox("Estado", estados)
+    else:
+        selected_estado = 'Todos'
 
 df_filtered = df.copy()
 
@@ -263,64 +311,89 @@ if selected_muni != 'Todos' and 'municipio' in df.columns:
 if selected_prog != 'Todos' and 'programa' in df.columns:
     df_filtered = df_filtered[df_filtered['programa'] == selected_prog]
 
-if selected_years and 'a_o_de_asignaci_n' in df.columns:
+if selected_years and year_col in df.columns:
     df_filtered = df_filtered[
-        (df_filtered['a_o_de_asignaci_n'] >= selected_years[0]) &
-        (df_filtered['a_o_de_asignaci_n'] <= selected_years[1])
+        (df_filtered[year_col] >= selected_years[0]) &
+        (df_filtered[year_col] <= selected_years[1])
     ]
 
-if selected_estado != 'Todos' and 'estado_de_postulaci_n' in df.columns:
-    df_filtered = df_filtered[df_filtered['estado_de_postulaci_n'] == selected_estado]
+if dataset_type == 'general':
+    if selected_estado != 'Todos' and 'estado_de_postulaci_n' in df.columns:
+        df_filtered = df_filtered[df_filtered['estado_de_postulaci_n'] == selected_estado]
+else:
+    if selected_estado != 'Todos' and 'estado' in df.columns:
+        df_filtered = df_filtered[df_filtered['estado'] == selected_estado]
 
 st.header("📊 Indicadores Principales")
 
 col1, col2, col3, col4 = st.columns(4)
 
-with col1:
-    total_hogares = df_filtered['hogares'].sum() if 'hogares' in df_filtered.columns else 0
-    st.metric("Total Hogares Beneficiados", format_number(total_hogares))
-
-with col2:
-    total_valor = df_filtered['valor_asignado'].sum() if 'valor_asignado' in df_filtered.columns else 0
-    st.metric("Valor Total Asignado", format_currency(total_valor))
-
-with col3:
-    total_registros = len(df_filtered)
-    st.metric("Registros", format_number(total_registros))
-
-with col4:
-    if 'departamento' in df_filtered.columns:
-        total_deptos = df_filtered['departamento'].nunique()
-        st.metric("Departamentos", format_number(total_deptos))
+if dataset_type == 'general':
+    with col1:
+        total_hogares = df_filtered['hogares'].sum() if 'hogares' in df_filtered.columns else 0
+        st.metric("Total Hogares Beneficiados", format_number(total_hogares))
+    
+    with col2:
+        total_valor = df_filtered['valor_asignado'].sum() if 'valor_asignado' in df_filtered.columns else 0
+        st.metric("Valor Total Asignado", format_currency(total_valor))
+    
+    with col3:
+        total_registros = len(df_filtered)
+        st.metric("Registros", format_number(total_registros))
+    
+    with col4:
+        if 'departamento' in df_filtered.columns:
+            total_deptos = df_filtered['departamento'].nunique()
+            st.metric("Departamentos", format_number(total_deptos))
+else:
+    with col1:
+        total_sfv = df_filtered['no_sfv_asignados'].sum() if 'no_sfv_asignados' in df_filtered.columns else 0
+        st.metric("Total SFV Asignados", format_number(total_sfv))
+    
+    with col2:
+        total_valor = df_filtered['valor_asignado'].sum() if 'valor_asignado' in df_filtered.columns else 0
+        st.metric("Valor Total Asignado", format_currency(total_valor))
+    
+    with col3:
+        total_registros = len(df_filtered)
+        st.metric("Registros", format_number(total_registros))
+    
+    with col4:
+        if 'departamento' in df_filtered.columns:
+            total_deptos = df_filtered['departamento'].nunique()
+            st.metric("Departamentos", format_number(total_deptos))
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4 = st.tabs(["📈 Por Departamento", "📅 Por Año", "🏘️ Por Programa", "📋 Datos Detallados"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Por Departamento", "📅 Por Año", "🏘️ Por Programa", "� Analítica Avanzada", "�📋 Datos Detallados"])
 
 with tab1:
     st.subheader("Subsidios por Departamento")
     
-    if 'departamento' in df_filtered.columns and 'hogares' in df_filtered.columns:
+    beneficiary_col = 'no_sfv_asignados' if dataset_type == 'rural' else 'hogares'
+    beneficiary_label = 'SFV Asignados' if dataset_type == 'rural' else 'Hogares'
+    
+    if 'departamento' in df_filtered.columns and beneficiary_col in df_filtered.columns:
         dept_data = df_filtered.groupby('departamento').agg({
-            'hogares': 'sum',
+            beneficiary_col: 'sum',
             'valor_asignado': 'sum'
-        }).reset_index().sort_values('hogares', ascending=False).head(20)
+        }).reset_index().sort_values(beneficiary_col, ascending=False).head(20)
         
         col1, col2 = st.columns(2)
         
         with col1:
-            fig_dept_hogares = px.bar(
+            fig_dept_beneficiaries = px.bar(
                 dept_data,
-                x='hogares',
+                x=beneficiary_col,
                 y='departamento',
                 orientation='h',
-                title='Top 20 Departamentos por Hogares Beneficiados',
-                labels={'hogares': 'Hogares', 'departamento': 'Departamento'},
-                color='hogares',
+                title=f'Top 20 Departamentos por {beneficiary_label}',
+                labels={beneficiary_col: beneficiary_label, 'departamento': 'Departamento'},
+                color=beneficiary_col,
                 color_continuous_scale='Blues'
             )
-            fig_dept_hogares.update_layout(height=600)
-            st.plotly_chart(fig_dept_hogares, use_container_width=True)
+            fig_dept_beneficiaries.update_layout(height=600)
+            st.plotly_chart(fig_dept_beneficiaries, use_container_width=True)
         
         with col2:
             fig_dept_valor = px.bar(
@@ -339,33 +412,37 @@ with tab1:
 with tab2:
     st.subheader("Evolución Temporal de Subsidios")
     
-    if 'a_o_de_asignaci_n' in df_filtered.columns:
-        year_data = df_filtered.groupby('a_o_de_asignaci_n').agg({
-            'hogares': 'sum',
+    year_col = 'a_o_de_asignacion' if dataset_type == 'rural' else 'a_o_de_asignaci_n'
+    beneficiary_col = 'no_sfv_asignados' if dataset_type == 'rural' else 'hogares'
+    beneficiary_label = 'SFV Asignados' if dataset_type == 'rural' else 'Hogares'
+    
+    if year_col in df_filtered.columns:
+        year_data = df_filtered.groupby(year_col).agg({
+            beneficiary_col: 'sum',
             'valor_asignado': 'sum'
-        }).reset_index().sort_values('a_o_de_asignaci_n')
+        }).reset_index().sort_values(year_col)
         
         col1, col2 = st.columns(2)
         
         with col1:
-            fig_year_hogares = px.line(
+            fig_year_beneficiaries = px.line(
                 year_data,
-                x='a_o_de_asignaci_n',
-                y='hogares',
-                title='Hogares Beneficiados por Año',
-                labels={'a_o_de_asignaci_n': 'Año', 'hogares': 'Hogares'},
+                x=year_col,
+                y=beneficiary_col,
+                title=f'{beneficiary_label} por Año',
+                labels={year_col: 'Año', beneficiary_col: beneficiary_label},
                 markers=True
             )
-            fig_year_hogares.update_traces(line_color='#1f4788', line_width=3)
-            st.plotly_chart(fig_year_hogares, use_container_width=True)
+            fig_year_beneficiaries.update_traces(line_color='#1f4788', line_width=3)
+            st.plotly_chart(fig_year_beneficiaries, use_container_width=True)
         
         with col2:
             fig_year_valor = px.line(
                 year_data,
-                x='a_o_de_asignaci_n',
+                x=year_col,
                 y='valor_asignado',
                 title='Valor Asignado por Año',
-                labels={'a_o_de_asignaci_n': 'Año', 'valor_asignado': 'Valor Asignado (COP)'},
+                labels={year_col: 'Año', 'valor_asignado': 'Valor Asignado (COP)'},
                 markers=True
             )
             fig_year_valor.update_traces(line_color='#28a745', line_width=3)
@@ -374,20 +451,23 @@ with tab2:
 with tab3:
     st.subheader("Análisis por Programa")
     
+    beneficiary_col = 'no_sfv_asignados' if dataset_type == 'rural' else 'hogares'
+    beneficiary_label = 'SFV Asignados' if dataset_type == 'rural' else 'Hogares'
+    
     if 'programa' in df_filtered.columns:
         prog_data = df_filtered.groupby('programa').agg({
-            'hogares': 'sum',
+            beneficiary_col: 'sum',
             'valor_asignado': 'sum'
-        }).reset_index().sort_values('hogares', ascending=False)
+        }).reset_index().sort_values(beneficiary_col, ascending=False)
         
         col1, col2 = st.columns(2)
         
         with col1:
             fig_prog_pie = px.pie(
                 prog_data,
-                values='hogares',
+                values=beneficiary_col,
                 names='programa',
-                title='Distribución de Hogares por Programa',
+                title=f'Distribución de {beneficiary_label} por Programa',
                 hole=0.4
             )
             st.plotly_chart(fig_prog_pie, use_container_width=True)
@@ -406,22 +486,155 @@ with tab3:
             st.plotly_chart(fig_prog_bar, use_container_width=True)
 
 with tab4:
+    st.subheader("📊 Analítica Avanzada")
+    
+    beneficiary_col = 'no_sfv_asignados' if dataset_type == 'rural' else 'hogares'
+    beneficiary_label = 'SFV Asignados' if dataset_type == 'rural' else 'Hogares'
+    year_col = 'a_o_de_asignacion' if dataset_type == 'rural' else 'a_o_de_asignaci_n'
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🎯 Concentración Geográfica")
+        if 'departamento' in df_filtered.columns and beneficiary_col in df_filtered.columns:
+            top_5_dept = df_filtered.groupby('departamento')[beneficiary_col].sum().nlargest(5)
+            total_beneficiaries = df_filtered[beneficiary_col].sum()
+            concentration = (top_5_dept.sum() / total_beneficiaries * 100) if total_beneficiaries > 0 else 0
+            
+            st.metric("Concentración Top 5 Departamentos", f"{concentration:.1f}%")
+            
+            fig_concentration = px.bar(
+                x=top_5_dept.values,
+                y=top_5_dept.index,
+                orientation='h',
+                title='Top 5 Departamentos',
+                labels={'x': beneficiary_label, 'y': 'Departamento'},
+                color=top_5_dept.values,
+                color_continuous_scale='Reds'
+            )
+            st.plotly_chart(fig_concentration, use_container_width=True)
+    
+    with col2:
+        st.markdown("### 💰 Valor Promedio por Beneficiario")
+        if beneficiary_col in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
+            total_valor = df_filtered['valor_asignado'].sum()
+            total_beneficiaries = df_filtered[beneficiary_col].sum()
+            avg_value = total_valor / total_beneficiaries if total_beneficiaries > 0 else 0
+            
+            st.metric("Valor Promedio", format_currency(avg_value))
+            
+            if 'departamento' in df_filtered.columns:
+                dept_avg = df_filtered.groupby('departamento').apply(
+                    lambda x: x['valor_asignado'].sum() / x[beneficiary_col].sum() if x[beneficiary_col].sum() > 0 else 0
+                ).nlargest(10)
+                
+                fig_avg = px.bar(
+                    x=dept_avg.values,
+                    y=dept_avg.index,
+                    orientation='h',
+                    title='Top 10 Departamentos por Valor Promedio',
+                    labels={'x': 'Valor Promedio (COP)', 'y': 'Departamento'},
+                    color=dept_avg.values,
+                    color_continuous_scale='Greens'
+                )
+                st.plotly_chart(fig_avg, use_container_width=True)
+    
+    st.markdown("---")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown("### 📈 Tendencia de Crecimiento")
+        if year_col in df_filtered.columns and beneficiary_col in df_filtered.columns:
+            yearly_trend = df_filtered.groupby(year_col)[beneficiary_col].sum().sort_index()
+            
+            if len(yearly_trend) > 1:
+                growth_rate = ((yearly_trend.iloc[-1] - yearly_trend.iloc[0]) / yearly_trend.iloc[0] * 100) if yearly_trend.iloc[0] > 0 else 0
+                st.metric("Crecimiento Total", f"{growth_rate:.1f}%")
+                
+                fig_trend = px.area(
+                    x=yearly_trend.index,
+                    y=yearly_trend.values,
+                    title='Tendencia Anual',
+                    labels={'x': 'Año', 'y': beneficiary_label}
+                )
+                fig_trend.update_traces(fillcolor='rgba(31, 71, 136, 0.3)', line_color='#1f4788')
+                st.plotly_chart(fig_trend, use_container_width=True)
+    
+    with col4:
+        st.markdown("### 🏘️ Distribución por Programa")
+        if 'programa' in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
+            prog_summary = df_filtered.groupby('programa').agg({
+                beneficiary_col: 'sum',
+                'valor_asignado': 'sum'
+            }).reset_index()
+            
+            prog_summary['avg_value'] = prog_summary['valor_asignado'] / prog_summary[beneficiary_col]
+            prog_summary = prog_summary.sort_values('avg_value', ascending=False)
+            
+            fig_prog_scatter = px.scatter(
+                prog_summary,
+                x=beneficiary_col,
+                y='valor_asignado',
+                size='avg_value',
+                color='programa',
+                title='Programas: Beneficiarios vs Valor Total',
+                labels={
+                    beneficiary_col: beneficiary_label,
+                    'valor_asignado': 'Valor Total (COP)',
+                    'avg_value': 'Valor Promedio'
+                },
+                hover_data=['avg_value']
+            )
+            st.plotly_chart(fig_prog_scatter, use_container_width=True)
+    
+    st.markdown("---")
+    
+    st.markdown("### 🗺️ Mapa de Calor: Municipios")
+    if 'municipio' in df_filtered.columns and beneficiary_col in df_filtered.columns:
+        muni_data = df_filtered.groupby('municipio').agg({
+            beneficiary_col: 'sum',
+            'valor_asignado': 'sum'
+        }).reset_index().sort_values(beneficiary_col, ascending=False).head(30)
+        
+        fig_heatmap = px.density_heatmap(
+            df_filtered.head(1000),
+            x='departamento',
+            y='municipio',
+            z=beneficiary_col,
+            title='Distribución de Subsidios por Departamento y Municipio (Top 1000 registros)',
+            color_continuous_scale='YlOrRd'
+        )
+        fig_heatmap.update_layout(height=500)
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+
+with tab5:
     st.subheader("Tabla de Datos Detallados")
     
-    st.dataframe(
-        df_filtered.style.format({
+    if dataset_type == 'general':
+        format_dict = {
             'hogares': '{:,.0f}',
             'valor_asignado': '${:,.0f}',
             'a_o_de_asignaci_n': '{:.0f}'
-        } if all(col in df_filtered.columns for col in ['hogares', 'valor_asignado', 'a_o_de_asignaci_n']) else {}),
+        } if all(col in df_filtered.columns for col in ['hogares', 'valor_asignado', 'a_o_de_asignaci_n']) else {}
+    else:
+        format_dict = {
+            'no_sfv_asignados': '{:,.0f}',
+            'valor_asignado': '${:,.0f}',
+            'a_o_de_asignacion': '{:.0f}'
+        } if all(col in df_filtered.columns for col in ['no_sfv_asignados', 'valor_asignado', 'a_o_de_asignacion']) else {}
+    
+    st.dataframe(
+        df_filtered.style.format(format_dict),
         use_container_width=True,
         height=500
     )
     
+    file_prefix = 'subsidios_vivienda_rural' if dataset_type == 'rural' else 'subsidios_vivienda_general'
     st.download_button(
         label="📥 Descargar datos filtrados (CSV)",
         data=df_filtered.to_csv(index=False).encode('utf-8'),
-        file_name=f'subsidios_vivienda_{datetime.now().strftime("%Y%m%d")}.csv',
+        file_name=f'{file_prefix}_{datetime.now().strftime("%Y%m%d")}.csv',
         mime='text/csv'
     )
 
