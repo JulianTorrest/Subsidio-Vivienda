@@ -1074,40 +1074,65 @@ with tab4:
     
     st.markdown("---")
     
-    if dataset_type == 'military':
-        st.markdown("### � Análisis por Trimestre")
-        if 'trimestre' in df_filtered.columns and 'total_subsidios' in df_filtered.columns:
-            trimestre_data = df_filtered.groupby('trimestre')['total_subsidios'].sum().reset_index()
-            
-            fig_trimestre = px.bar(
-                trimestre_data,
-                x='trimestre',
-                y='total_subsidios',
-                title='Subsidios por Trimestre',
-                labels={'trimestre': 'Trimestre', 'total_subsidios': 'Total Subsidios'},
-                color='total_subsidios',
-                color_continuous_scale='Blues'
-            )
-            fig_trimestre.update_traces(texttemplate='%{y:,.0f}', textposition='outside')
-            st.plotly_chart(fig_trimestre, use_container_width=True)
-    else:
-        st.markdown("### ��️ Mapa de Calor: Municipios")
-        if 'municipio' in df_filtered.columns and beneficiary_col in df_filtered.columns:
-            muni_data = df_filtered.groupby('municipio').agg({
-                beneficiary_col: 'sum',
-                'valor_asignado': 'sum'
-            }).reset_index().sort_values(beneficiary_col, ascending=False).head(30)
-            
-            fig_heatmap = px.density_heatmap(
-                df_filtered.head(1000),
-                x='departamento',
-                y='municipio',
-                z=beneficiary_col,
-                title='Distribución de Subsidios por Departamento y Municipio (Top 1000 registros)',
-                color_continuous_scale='YlOrRd'
-            )
-            fig_heatmap.update_layout(height=500)
-            st.plotly_chart(fig_heatmap, use_container_width=True)
+    col5, col6 = st.columns(2)
+    
+    with col5:
+        if dataset_type in ['military', 'used_housing']:
+            st.markdown("### 📅 Análisis por Trimestre")
+            if 'trimestre' in df_filtered.columns and 'total_subsidios' in df_filtered.columns:
+                trimestre_data = df_filtered.groupby('trimestre')['total_subsidios'].sum().reset_index()
+                
+                fig_trimestre = px.bar(
+                    trimestre_data,
+                    x='trimestre',
+                    y='total_subsidios',
+                    title='Subsidios por Trimestre',
+                    labels={'trimestre': 'Trimestre', 'total_subsidios': 'Total Subsidios'},
+                    color='total_subsidios',
+                    color_continuous_scale='Blues'
+                )
+                fig_trimestre.update_traces(texttemplate='%{y:,.0f}', textposition='outside')
+                st.plotly_chart(fig_trimestre, use_container_width=True)
+        else:
+            st.markdown("### 🗺️ Mapa de Calor: Municipios")
+            if 'municipio' in df_filtered.columns and beneficiary_col in df_filtered.columns:
+                muni_data = df_filtered.groupby('municipio').agg({
+                    beneficiary_col: 'sum',
+                    'valor_asignado': 'sum'
+                }).reset_index().sort_values(beneficiary_col, ascending=False).head(30)
+                
+                fig_heatmap = px.density_heatmap(
+                    df_filtered.head(1000),
+                    x='departamento',
+                    y='municipio',
+                    z=beneficiary_col,
+                    title='Distribución de Subsidios por Departamento y Municipio (Top 1000 registros)',
+                    color_continuous_scale='YlOrRd'
+                )
+                fig_heatmap.update_layout(height=500)
+                st.plotly_chart(fig_heatmap, use_container_width=True)
+    
+    with col6:
+        if dataset_type == 'used_housing':
+            st.markdown("### 📊 Evolución Trimestral por Tipo")
+            if 'trimestre' in df_filtered.columns and 'ano' in df_filtered.columns:
+                trimestre_vis_data = df_filtered.groupby(['ano', 'trimestre']).agg({
+                    'total_vis': 'sum',
+                    'total_no_vis': 'sum'
+                }).reset_index()
+                trimestre_vis_data['periodo'] = trimestre_vis_data['ano'].astype(str) + '-T' + trimestre_vis_data['trimestre'].astype(str)
+                
+                fig_trimestre_vis = px.line(
+                    trimestre_vis_data,
+                    x='periodo',
+                    y=['total_vis', 'total_no_vis'],
+                    title='Evolución VIS vs No VIS por Trimestre',
+                    labels={'value': 'Cantidad', 'variable': 'Tipo', 'periodo': 'Período'},
+                    markers=True,
+                    color_discrete_map={'total_vis': '#1f4788', 'total_no_vis': '#28a745'}
+                )
+                fig_trimestre_vis.update_layout(xaxis_tickangle=-45)
+                st.plotly_chart(fig_trimestre_vis, use_container_width=True)
 
 with tab5:
     st.subheader("🤖 Análisis de Machine Learning - Clustering")
@@ -1315,3 +1340,4 @@ st.markdown("""
         <p>Última actualización: {}</p>
     </div>
 """.format(datetime.now().strftime("%d/%m/%Y %H:%M")), unsafe_allow_html=True)
+True)
