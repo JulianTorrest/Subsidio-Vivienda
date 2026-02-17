@@ -200,6 +200,20 @@ def process_dataframe(df, dataset_type='general'):
         else:
             df['total_subsidios'] = 0
     elif dataset_type == 'cmc_mcy':
+        if 'departamento' in df.columns:
+            dept_mapping = {
+                'atlantico': 'atlantico',
+                'bogota_d__c_': 'bogota_d_c',
+                'bolivar': 'bolivar',
+                'boyaca': 'boyaca',
+                'caqueta': 'caqueta',
+                'cordoba': 'cordoba',
+                'guainia': 'guainia',
+                'quindio': 'quindio'
+            }
+            for old_name, new_name in dept_mapping.items():
+                df.loc[df['departamento'] == old_name, 'departamento'] = new_name
+        
         if 'no_sfv_asignados' in df.columns:
             df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
         if 'valor_asignado' in df.columns:
@@ -658,8 +672,13 @@ with tab3:
             )
             st.plotly_chart(fig_housing_bar, use_container_width=True)
     elif 'programa' in df_filtered.columns:
-        beneficiary_col = 'no_sfv_asignados' if dataset_type == 'rural' else 'hogares'
-        beneficiary_label = 'SFV Asignados' if dataset_type == 'rural' else 'Hogares'
+        if dataset_type in ['rural', 'cmc_mcy']:
+            beneficiary_col = 'no_sfv_asignados'
+            beneficiary_label = 'SFV Asignados'
+        else:
+            beneficiary_col = 'hogares'
+            beneficiary_label = 'Hogares'
+        
         prog_data = df_filtered.groupby('programa').agg({
             beneficiary_col: 'sum',
             'valor_asignado': 'sum'
