@@ -979,24 +979,25 @@ with tab4:
                 fig_forces.update_traces(texttemplate='%{x:,.0f}', textposition='outside')
                 st.plotly_chart(fig_forces, use_container_width=True)
         else:
-            st.markdown("### �� Valor Promedio por Beneficiario")
-            if beneficiary_col in df_filtered.columns and 'valor_asignado' in df_filtered.columns:
+            st.markdown("### 💰 Valor Promedio por Subsidio")
+            if 'valor_asignado' in df_filtered.columns:
                 total_valor = df_filtered['valor_asignado'].sum()
-                total_beneficiaries = df_filtered[beneficiary_col].sum()
-                avg_value = total_valor / total_beneficiaries if total_beneficiaries > 0 else 0
+                total_subsidios = len(df_filtered)  # Número de registros/postulaciones
+                avg_value = total_valor / total_subsidios if total_subsidios > 0 else 0
                 
-                st.metric("Valor Promedio", format_currency(avg_value))
+                st.metric("Valor Promedio por Subsidio", format_currency(avg_value))
                 
                 if 'departamento' in df_filtered.columns:
+                    # Calcular valor promedio por departamento (valor total / número de registros)
                     dept_avg = df_filtered.groupby('departamento').apply(
-                        lambda x: x['valor_asignado'].sum() / x[beneficiary_col].sum() if x[beneficiary_col].sum() > 0 else 0
+                        lambda x: x['valor_asignado'].sum() / len(x) if len(x) > 0 else 0
                     ).nlargest(10)
                     
                     fig_avg = px.bar(
                         x=dept_avg.values,
                         y=dept_avg.index,
                         orientation='h',
-                        title='Top 10 Departamentos por Valor Promedio',
+                        title='Top 10 Departamentos por Valor Promedio por Subsidio',
                         labels={'x': 'Valor Promedio (COP)', 'y': 'Departamento'},
                         color=dept_avg.values,
                         color_continuous_scale='Greens'
