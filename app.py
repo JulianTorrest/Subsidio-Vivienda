@@ -139,6 +139,7 @@ def process_dataframe(df, dataset_type='general'):
     dataset_type: 'general', 'rural', or 'military'
     """
     df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('ó', 'o').str.replace('ñ', 'n').str.replace('í', 'i').str.replace('.', '_').str.replace('-', '_')
+    df.columns = df.columns.str.replace('__+', '_', regex=True)
     
     if dataset_type == 'general':
         if 'hogares' in df.columns:
@@ -150,8 +151,8 @@ def process_dataframe(df, dataset_type='general'):
     elif dataset_type == 'rural':
         if 'no_sfv_asignados' in df.columns:
             df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
-        elif 'no__sfv_asignados' in df.columns:
-            df['no_sfv_asignados'] = pd.to_numeric(df['no__sfv_asignados'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
+        elif 'no_sfv_asignados' in df.columns:
+            df['no_sfv_asignados'] = pd.to_numeric(df['no_sfv_asignados'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
         if 'valor_asignado' in df.columns:
             df['valor_asignado'] = pd.to_numeric(df['valor_asignado'].astype(str).str.replace(',', '').str.replace('$', '').str.replace('.', ''), errors='coerce')
         if 'ano_de_asignacion' in df.columns:
@@ -161,10 +162,22 @@ def process_dataframe(df, dataset_type='general'):
             df['ano'] = pd.to_numeric(df['ano'].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
         if 'trimestre' in df.columns:
             df['trimestre'] = pd.to_numeric(df['trimestre'], errors='coerce')
-        for col in ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
-        df['total_subsidios'] = df[['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']].sum(axis=1)
+        
+        col_mapping = {
+            'nueva_vis': ['nueva_vis', 'nueva__vis'],
+            'nueva_no_vis': ['nueva_no_vis', 'nueva__no_vis'],
+            'usada_vis': ['usada_vis', 'usada___vis', 'usada__vis'],
+            'usada_no_vis': ['usada_no_vis', 'usada__no_vis']
+        }
+        
+        for target_col, possible_names in col_mapping.items():
+            for possible_name in possible_names:
+                if possible_name in df.columns:
+                    df[target_col] = pd.to_numeric(df[possible_name].astype(str).str.replace(',', '').str.replace('.', ''), errors='coerce')
+                    break
+        
+        if all(col in df.columns for col in ['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']):
+            df['total_subsidios'] = df[['nueva_vis', 'nueva_no_vis', 'usada_vis', 'usada_no_vis']].sum(axis=1)
     
     return df
 
@@ -834,4 +847,3 @@ st.markdown("""
         <p>Última actualización: {}</p>
     </div>
 """.format(datetime.now().strftime("%d/%m/%Y %H:%M")), unsafe_allow_html=True)
-
